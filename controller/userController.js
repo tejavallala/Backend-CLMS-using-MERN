@@ -1,85 +1,131 @@
 const express = require("express");
-const userModel = require("../model/userModel"); 
+const userModel = require("../model/userModel");
 
 const userRoute = new express.Router();
 
-userRoute.post("/create-user", (req, res) => {
-    userModel.create(req.body, (err, data) => {
-        if (err)
-            return err;
-        else
-            res.json(data);
+userRoute.post("/create-user", async (req, res) => {
+  try {
+    // Check if email already exists
+    const existingUser = await userModel.findOne({ email: req.body.email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+
+    // Validate phone number
+    const phoneRegex = /^[0-9]{10}$/;
+    if (!phoneRegex.test(req.body.phoneNumber)) {
+      return res.status(400).json({ message: "Phone number must be 10 digits" });
+    }
+
+    // Create new user
+    const newUser = await userModel.create(req.body);
+    res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      user: newUser
     });
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: messages
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
 });
 
 userRoute.get("/", (req, res) => {
-    userModel.find((err, data) => {
-        if (err)
-            return err;
-        else
-            res.json(data);
-    });
+  userModel.find((err, data) => {
+    if (err) return err;
+    else res.json(data);
+  });
 });
-
-userRoute.route("/update-user/:id")
-    .get((req, res) => {
-        userModel.findById(req.params.id, (err, data) => {
-            if (err)
-                return err;
-            else
-                res.json(data);
-        });
-    })
-    .put((req, res) => {
-        userModel.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true }, (err, data) => {
-            if (err)
-                return err;
-            else
-                res.json(data);
-        });
-    });
-
-userRoute.delete("/delete-user/:id", (req, res) => {
-    userModel.findByIdAndRemove(req.params.id, (err, data) => {
-        if (err)
-            return err;
-        else
-            res.json(data);
-    });
-});
-
-
 
 userRoute.post("/login", async (req, res) => {
+  try {
     const { email, password } = req.body;
-    try {
-        const user = await userModel.findOne({ email, password });
-        if (user) {
-            res.status(200).json({ message: "Login successful", user });
-        } else {
-            res.status(401).json({ message: "Invalid email or password" });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Internal server error" });
+
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Please provide email and password" 
+      });
     }
-});
-userRoute.get("/getUserDetails", async (req, res) => {
-   
-    try {
-        const user = req.user; 
-        if (user) {
-            res.status(200).json({ message: "User details retrieved successfully", user });
-        } else {
-            res.status(401).json({ message: "User not authenticated" });
+
+    const user = await userModel.findOne({ email, password });
+    if (user) {
+      res.status(200).json({ 
+        success: true,
+        message: "Login successful", 
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email
         }
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Internal server error" });
+      });
+    } else {
+      res.status(401).json({ 
+        success: false,
+        message: "Invalid email or password" 
+      });
     }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ 
+      success: false,
+      message: "Internal server error" 
+    });
+  }
 });
 
+userRoute.get("/get-user/:id", async (req, res) => {
+  try {
+    const user = await userModel.findById(req.params.id)
+      .select('name email phoneNumber gender');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
 
+    res.status(200).json({
+      success: true,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        gender:user.gender
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user data"
+    });
+  }
+});
+// In your backend userRoute.js
+userRoute.get('/user-courses/:userId', async (req, res) => {
+  try {
+    const courses = await Course.find({ 
+      enrolledStudents: req.params.userId 
+    });
+    res.json({ success: true, courses });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching user courses' 
+    });
+  }
+});
 
 module.exports = userRoute;
-
